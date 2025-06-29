@@ -367,7 +367,9 @@ export class ConatServer {
             return false;
           }
         } catch (err) {
-          console.log(`initInterest: WARNING -- ${err}`);
+          if (!process.env.COCALC_TEST_MODE) {
+            console.log(`initInterest: WARNING -- ${err}`);
+          }
           return false;
         }
       },
@@ -479,7 +481,9 @@ export class ConatServer {
             return false;
           }
         } catch (err) {
-          console.log(`initInterest: WARNING -- ${err}`);
+          if (!process.env.COCALC_TEST_MODE) {
+            console.log(`initInterest: WARNING -- ${err}`);
+          }
           return false;
         }
       },
@@ -655,6 +659,7 @@ export class ConatServer {
   private handleSocket = async (socket) => {
     this.sockets[socket.id] = socket;
     socket.once("closed", () => {
+      this.log("connection closed", socket.id);
       delete this.sockets[socket.id];
       delete this.stats[socket.id];
     });
