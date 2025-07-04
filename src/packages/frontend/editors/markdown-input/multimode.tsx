@@ -15,7 +15,6 @@ import {
   useRef,
   useState,
 } from "react";
-
 import { SubmitMentionsRef } from "@cocalc/frontend/chat/types";
 import { Icon } from "@cocalc/frontend/components";
 import { EditableMarkdown } from "@cocalc/frontend/editors/slate/editable-markdown";
@@ -50,6 +49,7 @@ const multimodeStateCache = new LRU<string, MultimodeState>({ max: 500 });
 // markdown = "Markdown"
 const Modes = ["markdown", "editor"] as const;
 export type Mode = (typeof Modes)[number];
+
 
 const LOCAL_STORAGE_KEY = "markdown-editor-mode";
 
@@ -207,7 +207,7 @@ export default function MultiMarkdownInput({
     onChangeRef.current = onChange;
   }, [onChange]);
 
-  const editBar2 = useRef<JSX.Element | undefined>(undefined);
+  const editBar2 = useRef<React.JSX.Element | undefined>(undefined);
 
   const getKey = () => `${project_id}${path}:${cacheId}`;
 

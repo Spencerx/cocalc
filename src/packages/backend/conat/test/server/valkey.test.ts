@@ -175,6 +175,7 @@ describe("create two servers connected via valkey, and verify that *sticky* subs
     client1 = server1.client();
     server2 = await initConatServer({ valkey });
     client2 = server2.client();
+    await delay(500);
   });
 
   let s1, s2, stickyTarget;
@@ -219,7 +220,7 @@ describe("create two servers connected via valkey, and verify that *sticky* subs
   });
 
   let server3, server4, client3;
-  it("add new conat servers and observe sticky mapping is still the same so using shared  state instead of consistent hashing", async () => {
+  it("add new conat servers and observe sticky mapping is still the same, so using shared state instead of consistent hashing", async () => {
     server3 = await initConatServer({ valkey });
     server4 = await initConatServer({ valkey });
     await waitForSticky(server3, "sticky.io.*");
@@ -235,7 +236,9 @@ describe("create two servers connected via valkey, and verify that *sticky* subs
     expect(server1.sticky).toEqual(server4.sticky);
 
     client3 = server3.client();
-    const z = await client3.request("sticky.io.foo", null);
+    const z = await client3.request("sticky.io.foo", null, {
+      waitForInterest: true, // despite sticky known, interest must also sync
+    });
     expect(z.data).toBe(stickyTarget);
   });
 

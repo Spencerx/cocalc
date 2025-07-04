@@ -354,8 +354,25 @@ export class DKV<T = any> extends EventEmitter {
     return x as { [key: string]: T };
   };
 
+  // gets all the keys; fast because doesn't decode messages
   keys = (): string[] => {
-    return Object.keys(this.getAll());
+    if (this.kv == null) {
+      return [];
+    }
+    // this is fast
+    const keys = this.kv.keysKv();
+
+    // have to add any unsaved keys in this.local
+    let X: Set<string> | null = null;
+    for (const key in this.local) {
+      if (X === null) {
+        X = new Set(keys);
+      }
+      if (!X.has(key)) {
+        keys.push(key);
+      }
+    }
+    return keys;
   };
 
   has = (key: string): boolean => {
@@ -480,7 +497,7 @@ export class DKV<T = any> extends EventEmitter {
           status = await this.attemptToSave();
           //console.log("successfully saved");
         } catch (err) {
-          if (!process.env.COCALC_TEST_MODE) {
+          if (false && !process.env.COCALC_TEST_MODE) {
             console.log(
               "WARNING: dkv attemptToSave failed -- ",
               this.name,

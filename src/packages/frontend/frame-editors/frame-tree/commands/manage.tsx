@@ -26,6 +26,8 @@ const MAX_TITLE_WIDTH = 20;
 const MAX_SEARCH_RESULTS = 10;
 const ICON_WIDTH = "28px";
 
+const BUTTON_LABELS = false;
+
 export class ManageCommands {
   // TODO: setting this to FrameTitleBarProps causes type issues in frame-editors/jupyter-editor/editor.ts
   // So, there is probably a fundamental problem with that mapping into "AllActions"
@@ -132,7 +134,7 @@ export class ManageCommands {
     if (cmd == null) {
       return v;
     }
-    const process = (cmd, name, parentLabel: JSX.Element | string) => {
+    const process = (cmd, name, parentLabel: React.JSX.Element | string) => {
       if (cmd.children) {
         const newParentLabel = (
           <div style={{ display: "flex" }}>
@@ -211,7 +213,7 @@ export class ManageCommands {
     );
   };
 
-  getParentLabel = (cmd: Partial<Command>): JSX.Element | string => {
+  getParentLabel = (cmd: Partial<Command>): React.JSX.Element | string => {
     const { group } = cmd;
     if (!group) {
       return "Menu";
@@ -480,19 +482,21 @@ export class ManageCommands {
       label = (
         <>
           {icon ?? <Icon name="square" />}
-          <div
-            style={{
-              fontSize: "11px",
-              color: "#666",
-              marginTop: "-10px",
-              // special case: button='' explicitly means no label
-              width: cmd.button === "" ? undefined : "50px",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {buttonLabel}
-          </div>
+          {BUTTON_LABELS && (
+            <div
+              style={{
+                fontSize: "11px",
+                color: "#666",
+                marginTop: "-10px",
+                // special case: button='' explicitly means no label
+                width: cmd.button === "" ? undefined : "50px",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {buttonLabel}
+            </div>
+          )}
         </>
       );
     } else {

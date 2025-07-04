@@ -287,9 +287,9 @@ export class DStream<T = any> extends EventEmitter {
           await this.attemptToSave();
           //console.log("successfully saved");
         } catch (err) {
-          if (!process.env.COCALC_TEST_MODE) {
+          if (false && !process.env.COCALC_TEST_MODE) {
             console.log(
-              `WARNING: stream attemptToSave failed - ${err}`,
+              `WARNING: dstream attemptToSave failed - ${err}`,
               this.name,
             );
           }
@@ -419,7 +419,7 @@ export class DStream<T = any> extends EventEmitter {
 
   // this is not synchronous -- it makes sure everything is saved out,
   // then delete the persistent stream
-  // NOTE: for ephemeral streams, other clients will NOT see the result of a purge (unless they reconnect).
+  // NOTE: for ephemeral streams, other clients will NOT see the result of a delete (unless they reconnect).
   delete = async (opts?) => {
     await this.save();
     if (this.isClosed()) {

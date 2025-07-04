@@ -20,13 +20,11 @@ import { assertHasWritePermission as assertHasWritePermission0 } from "./auth";
 import { refCacheSync } from "@cocalc/util/refcache";
 import { EventEmitter } from "events";
 import { getLogger } from "@cocalc/conat/client";
+import { delay } from "awaiting";
 
 const logger = getLogger("persist:client");
 
-export interface ChangefeedEvent {
-  updates: (SetOperation | DeleteOperation)[];
-  seq: number;
-}
+export type ChangefeedEvent = (SetOperation | DeleteOperation)[];
 
 export type Changefeed = EventIterator<ChangefeedEvent>;
 
@@ -37,6 +35,10 @@ class PersistStreamClient extends EventEmitter {
   public socket: ConatSocketClient;
   private changefeeds: any[] = [];
   private state: "ready" | "closed" = "ready";
+  private lastSeq?: number;
+  private reconnecting = false;
+  private gettingMissed = false;
+  private changesWhenGettingMissed: ChangefeedEvent[] = [];
 
   constructor(
     private client: Client,
@@ -81,11 +83,18 @@ class PersistStreamClient extends EventEmitter {
       changefeed: this.changefeeds.length > 0,
     });
 
+    // get any messages from the stream that we missed while offline.
+    if (this.reconnecting) {
+      this.getMissed();
+    }
+
     this.socket.once("disconnected", () => {
+      this.reconnecting = true;
       this.socket.removeAllListeners();
       setTimeout(this.init, 1000);
     });
     this.socket.once("closed", () => {
+      this.reconnecting = true;
       this.socket.removeAllListeners();
       setTimeout(this.init, 1000);
     });
@@ -99,8 +108,82 @@ class PersistStreamClient extends EventEmitter {
         );
         this.close();
       }
-      this.emit("changefeed", { updates, seq: headers?.seq });
+      if (this.gettingMissed) {
+        this.changesWhenGettingMissed.push(updates);
+      } else {
+        this.changefeedEmit(updates);
+      }
     });
+  };
+
+  private getMissed = async () => {
+    try {
+      this.gettingMissed = true;
+      this.changesWhenGettingMissed.length = 0;
+      while (this.state == "ready") {
+        try {
+          await this.socket.waitUntilReady(90000);
+          break;
+        } catch {
+          // timeout
+          await delay(1000);
+        }
+      }
+      //     console.log("getMissed", {
+      //       path: this.storage.path,
+      //       lastSeq: this.lastSeq,
+      //       changefeeds: this.changefeeds.length,
+      //     });
+      if (this.changefeeds.length == 0) {
+        return;
+      }
+      // we are resuming after a disconnect when we had some data up to lastSeq.
+      // let's grab anything we missed.
+      const sub = await this.socket.requestMany(null, {
+        headers: {
+          cmd: "getAll",
+          start_seq: this.lastSeq,
+          timeout: 15000,
+        } as any,
+        timeout: 15000,
+        maxWait: 15000,
+      });
+      for await (const { data: updates, headers } of sub) {
+        if (headers?.error) {
+          // give up
+          return;
+        }
+        if (updates == null || this.socket.state == "closed") {
+          // done
+          return;
+        }
+        this.changefeedEmit(updates);
+      }
+    } finally {
+      this.gettingMissed = false;
+      for (const updates of this.changesWhenGettingMissed) {
+        this.changefeedEmit(updates);
+      }
+      this.changesWhenGettingMissed.length = 0;
+    }
+  };
+
+  private changefeedEmit = (updates: ChangefeedEvent) => {
+    updates = updates.filter((update) => {
+      if (update.op == "delete") {
+        return true;
+      } else {
+        if (update.seq > (this.lastSeq ?? 0)) {
+          this.lastSeq = update.seq;
+          return true;
+        }
+      }
+      return false;
+    });
+    if (updates.length == 0) {
+      return;
+    }
+    this.emit("changefeed", updates);
   };
 
   close = () => {
@@ -116,6 +199,10 @@ class PersistStreamClient extends EventEmitter {
     this.socket.close();
   };
 
+  // The changefeed is *guaranteed* to deliver every message
+  // in the stream **exactly once and in order**, even if there
+  // are disconnects, failovers, etc.  Dealing with dropped messages,
+  // duplicates, etc., is NOT the responsibility of clients.
   changefeed = async (): Promise<Changefeed> => {
     // activate changefeed mode (so server publishes updates -- this is idempotent)
     const resp = await this.socket.request(null, {
