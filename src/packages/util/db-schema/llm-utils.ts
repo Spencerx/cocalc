@@ -149,7 +149,7 @@ export const MODELS_OPENAI = [
   "gpt-5",
   "gpt-5.2-8k", // context limited
   "gpt-5.2",
-  "gpt-5.5-8k", // context limited
+  "gpt-5.5", // context limited (no 128k variant exposed)
   "gpt-5.4-8k", // context limited
   "gpt-5.4",
   "gpt-5-mini-8k", // context limited
@@ -163,6 +163,53 @@ export type OpenAIModel = (typeof MODELS_OPENAI)[number];
 export function isOpenAIModel(model: unknown): model is OpenAIModel {
   return MODELS_OPENAI.includes(model as any);
 }
+
+// Maps each user-selectable / internally-tracked OpenAI model to its
+// actual OpenAI API model name (or null if no longer supported).
+//
+// Mirrors ANTHROPIC_VERSION below — explicit mapping replaces fragile
+// prefix matching, which previously misrouted "gpt-5.5" to "gpt-5"
+// because it shared a prefix with the older model.
+//
+// Adding a new model? Add it here too. The TypeScript exhaustiveness
+// check on `[name in OpenAIModel]` will catch a missing entry at
+// build time.
+export const OPENAI_VERSION: { [name in OpenAIModel]: string | null } = {
+  "gpt-3.5-turbo": "gpt-3.5-turbo",
+  "gpt-3.5-turbo-16k": "gpt-3.5-turbo-16k",
+  "gpt-4": "gpt-4",
+  "gpt-4-32k": "gpt-4-32k",
+  "gpt-4.1": "gpt-4.1",
+  "gpt-4.1-mini": "gpt-4.1-mini",
+  "gpt-4-turbo-preview-8k": "gpt-4-turbo-preview",
+  "gpt-4-turbo-preview": "gpt-4-turbo-preview",
+  "gpt-4-turbo-8k": "gpt-4-turbo",
+  "gpt-4-turbo": "gpt-4-turbo",
+  "gpt-4o-mini-8k": "gpt-4o-mini",
+  "gpt-4o-mini": "gpt-4o-mini",
+  "gpt-4o-8k": "gpt-4o",
+  "gpt-4o": "gpt-4o",
+  o1: "o1",
+  "o1-8k": "o1",
+  "o1-mini": "o1-mini",
+  "o1-mini-8k": "o1-mini",
+  o3: "o3",
+  "o3-8k": "o3",
+  "o4-mini": "o4-mini",
+  "o4-mini-8k": "o4-mini",
+  "gpt-5": "gpt-5",
+  "gpt-5-8k": "gpt-5",
+  "gpt-5.2": "gpt-5.2",
+  "gpt-5.2-8k": "gpt-5.2",
+  "gpt-5.5": "gpt-5.5",
+  "gpt-5.4": "gpt-5.4",
+  "gpt-5.4-8k": "gpt-5.4",
+  "gpt-5-mini": "gpt-5-mini",
+  "gpt-5-mini-8k": "gpt-5-mini",
+  "gpt-5.4-mini": "gpt-5.4-mini",
+  "gpt-5.4-mini-8k": "gpt-5.4-mini",
+  "text-embedding-ada-002": "text-embedding-ada-002",
+} as const;
 
 // ATTN: when you modify this list, also change frontend/.../llm/llm-selector.tsx!
 export const MISTRAL_MODELS = [
@@ -395,7 +442,7 @@ export const USER_SELECTABLE_LLMS_BY_VENDOR: {
   [vendor in LLMServiceName]: Readonly<LanguageModelCore[]>;
 } = {
   openai: MODELS_OPENAI.filter(
-    (m) => m === "gpt-5.5-8k" || m === "gpt-5.4-8k" || m === "gpt-5.4-mini-8k",
+    (m) => m === "gpt-5.5" || m === "gpt-5.4-8k" || m === "gpt-5.4-mini-8k",
   ),
   google: [
     "gemini-3.1-pro-preview-8k",
@@ -975,7 +1022,7 @@ export const LLM_USERNAMES: LLM2String = {
   "gpt-5": "GPT-5 128k",
   "gpt-5.2-8k": "GPT-5.2",
   "gpt-5.2": "GPT-5.2 128k",
-  "gpt-5.5-8k": "GPT-5.5",
+  "gpt-5.5": "GPT-5.5",
   "gpt-5.4-8k": "GPT-5.4",
   "gpt-5.4": "GPT-5.4 128k",
   "gpt-5-mini-8k": "GPT-5 Mini",
@@ -1105,7 +1152,7 @@ export const LLM_DESCR: LLM2String = {
     "OpenAI's most advanced model with built-in reasoning (50k token context)",
   "gpt-5.2":
     "OpenAI's most advanced model with built-in reasoning (128k token context)",
-  "gpt-5.5-8k":
+  "gpt-5.5":
     "OpenAI's smartest model for coding and professional work (50k token context)",
   "gpt-5.4-8k":
     "OpenAI's most powerful model for professional work (50k token context)",
@@ -1581,7 +1628,7 @@ export const LLM_COST: { [name in LanguageModelCore]: Cost } = {
     max_tokens: 128000,
     free: false,
   },
-  "gpt-5.5-8k": {
+  "gpt-5.5": {
     prompt_tokens: usd1Mtokens(5),
     completion_tokens: usd1Mtokens(30),
     max_tokens: 50_000,
