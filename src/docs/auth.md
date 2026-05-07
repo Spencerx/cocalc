@@ -281,6 +281,268 @@ another user for debugging/support.
 `packages/server/accounts/is-banned.ts` — banned users are blocked at every
 authentication checkpoint (cookie validation, API key use, SSO login).
 
+## Cookie Consent (GDPR Banner)
+
+CoCalc ships a GDPR-style cookie consent banner powered by
+[vanilla-cookieconsent v3](https://cookieconsent.orestbida.com). It is shared
+between the SPA frontend (`packages/frontend`) and the Next.js landing pages
+(`packages/next`) — same configuration object, same React helpers, no
+duplication.
+
+### Categories and the consent contract
+
+Three categories, with a hard constraint:
+
+| Category    | Read-only? | Default  | Used for                                                                  |
+| ----------- | ---------- | -------- | ------------------------------------------------------------------------- |
+| `necessary` | yes        | accepted | Sign-in, session, `remember_me`, version sync                             |
+| `analytics` | no         | declined | Third-party tracking cookies (Google Analytics, etc.)                     |
+| `usage`     | no         | declined | First-party usage metrics — `TrackingClient.user_tracking` event recording |
+
+The `usage` category gates `frontend/client/tracking.ts#user_tracking`, the
+internal click/toggle/event recorder. Two layers must agree before an event
+is written: the admin-side `user_tracking` server setting AND the visitor's
+acceptance of the `usage` category. If the admin disables the banner site-
+wide, the cookie consent layer collapses to a passthrough and the admin
+setting alone gates (legacy behaviour).
+
+Sign-up, sign-in, and "use anonymously" are blocked until the user
+acknowledges the banner. The Sign In / Sign Up buttons stay disabled and
+show *"Acknowledge cookie banner to continue"*. On `/auth/sign-in`,
+`/auth/sign-up`, and `/auth/try`, the banner runs in **force-consent mode**:
+a dark overlay covers the page and clicks outside the banner are blocked
+(via vanilla-cookieconsent's `disablePageInteraction: true`).
+
+**SSO fallback in the SPA**: a successful SSO callback can drop a
+logged-in user on `/app` without ever passing through the auth-page
+overlay (e.g. when they followed a bookmarked SSO start URL). The SPA's
+root `App` component (`packages/frontend/app/render.tsx`) waits for
+`accountStore.waitUntilReady()` — so the dim never flashes during boot
+for users whose customize/account is still loading — and only then, if
+the user is logged in *and* `hasEssentialConsent()` is false, calls
+`enableForceConsent()`. That helper toggles the same `disable--interaction`
+class on `<html>` that vanilla-cookieconsent uses for its built-in
+overlay, and auto-removes it when the user accepts or declines (via
+`cc:onConsent` / `cc:onChange`). This is belt-and-braces: the auth pages
+already gate the common path; the SPA fallback covers users who reached
+`/app` through any other route.
+
+### Admin settings
+
+Two server settings, both tagged `"Cookie Banner"`:
+
+| Setting key             | Type                | Effect                                       |
+| ----------------------- | ------------------- | -------------------------------------------- |
+| `cookie_banner_enabled` | bool (`yes`/`no`)   | Master on/off — disables the banner entirely |
+| `cookie_banner_text`    | Markdown (multiline) | Body shown in banner + preferences modal     |
+
+Defined in `packages/util/db-schema/site-defaults.ts`. They flow through the
+existing `customize` pipeline:
+
+- **SPA**: `customize.cookie_banner_enabled` / `customize.cookie_banner_text`
+  in the Redux `customize` store
+- **Next.js**: `pageProps.customize.cookieBannerEnabled` /
+  `pageProps.customize.cookieBannerText`
+
+When `cookie_banner_enabled` is `no`, the banner runtime is never
+instantiated and all helpers (`hasEssentialConsent`, `useEssentialConsent`,
+`requireEssentialConsent`) pass through — no gating applied.
+
+### Retrieving consent (this is the public API)
+
+```typescript
+// Synchronous helpers (work in both SPA and Next.js)
+import {
+  hasEssentialConsent,    // user has acknowledged the banner at all
+  hasCategoryConsent,     // generic per-category check: hasCategoryConsent("usage")
+  hasTrackingConsent,     // alias for hasCategoryConsent("analytics")
+  getConsentSnapshot,     // {necessary, analytics, usage, timestamp, revision} | null
+  showPreferences,        // open the preferences modal programmatically
+  showConsentModal,       // re-open the initial banner
+  requireEssentialConsent,// returns true or surfaces the banner
+  enableForceConsent,     // SSO fallback: dim page + show banner until consent
+} from "@cocalc/frontend/cookie-consent";
+
+// React hook — re-renders when consent flips
+import { useEssentialConsent } from "@cocalc/frontend/cookie-consent";
+
+const ready = useEssentialConsent(); // boolean, reactive
+
+// Subscribe to consent changes (use this before loading any analytics
+// script — return early or defer until tracking flips true)
+import { onConsentChange } from "@cocalc/frontend/cookie-consent";
+useEffect(
+  () => onConsentChange((snap) => { /* react to changes */ }),
+  [],
+);
+```
+
+When `cookieBannerEnabled` is false (admin disabled the banner),
+`hasEssentialConsent` and `useEssentialConsent` return `true` so legacy
+callers don't break.
+
+### Adding a new analytics cookie
+
+When wiring up new tracking — Google Analytics, Plausible, internal
+tracking — gate on `hasTrackingConsent()` AND register the cookie name with
+the `analytics` category's `autoClearCookies` in
+`packages/frontend/cookie-consent/categories.ts`:
+
+```typescript
+{
+  key: "analytics",
+  label: "Analytics cookies",
+  readOnly: false,
+  defaultEnabled: false,
+  autoClearCookies: [
+    { name: /^_ga/ },     // Google Analytics
+    { name: /^_gid/ },    // Google Analytics
+    { name: "CC_ANA" },   // legacy CoCalc analytics
+    // add new cookie names here
+  ],
+},
+```
+
+`autoClearCookies` is `true` by default in v3, so listing the cookie name
+is sufficient — no manual revocation callback required. Reload the page
+after revocation only if needed (set `autoClear.reloadPage: true` in
+`init.ts`'s `buildCategoriesConfig`).
+
+For scripts you load conditionally (like `gtag.js`), wrap the load logic in
+a `useEffect` + `onConsentChange` listener: load when `analytics` is
+accepted; on revocation the cookies disappear automatically and the script
+itself just stops getting fresh consent. See
+`packages/frontend/customize.tsx#init_analytics` for the existing pattern
+that defers Google Analytics + the legacy `analytics.js` until tracking
+consent.
+
+### Adding a new cookie category (e.g. marketing)
+
+Cookie categories are defined in one place,
+`packages/frontend/cookie-consent/categories.ts`. The v3 runtime config,
+the `ConsentSnapshot` type that's persisted to
+`accounts.other_settings.cookie_consent`, and the SPA settings panel all
+derive from this list — so adding a category is essentially one entry
+plus a revision bump.
+
+**Step 1**: append to `COOKIE_CATEGORIES`:
+
+```typescript
+// packages/frontend/cookie-consent/categories.ts
+export const COOKIE_CATEGORIES = [
+  { key: "necessary", label: "Necessary cookies", readOnly: true,  defaultEnabled: true },
+  { key: "analytics", label: "Analytics cookies", readOnly: false, defaultEnabled: false,
+    autoClearCookies: [/* … */] },
+  // NEW:
+  {
+    key: "marketing",
+    label: "Marketing cookies",
+    description: "Optional. Used to deliver targeted advertising and measure campaign effectiveness.",
+    readOnly: false,
+    defaultEnabled: false,
+    autoClearCookies: [
+      { name: /^_fbp/ },        // Facebook Pixel
+      { name: "_hubspotutk" },  // HubSpot
+    ],
+  },
+] as const satisfies ReadonlyArray<CookieCategory>;
+```
+
+That's it for the runtime config and the snapshot type — TypeScript
+narrows `CookieCategoryKey` to include `"marketing"` automatically and
+flags any callsite (e.g. existing `hasTrackingConsent` semantics, future
+consent-aware loaders) that should consider the new category.
+
+**Step 2**: bump `COOKIE_CONSENT_REVISION` in
+`packages/frontend/cookie-consent/index.ts`:
+
+```typescript
+export const COOKIE_CONSENT_REVISION = 2; // was 1
+```
+
+vanilla-cookieconsent compares the revision in the user's `cc_cookie`
+against the configured one and re-prompts if they differ. Without a bump,
+existing users keep their stale consent record (which doesn't mention the
+new category) and never get asked.
+
+**Step 3** (optional): if scripts/cookies are gated on the new category,
+add a helper alongside `hasTrackingConsent` in `index.ts`:
+
+```typescript
+export function hasMarketingConsent(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return CookieConsent.acceptedCategory("marketing");
+  } catch {
+    return false;
+  }
+}
+```
+
+Then gate any cookie-setting code on this helper. Cookies you list in
+`autoClearCookies` for the category are removed automatically on revoke,
+so the only manual code is "don't load the script unless consent is
+granted."
+
+**Step 4** (optional): the per-category title and `description` in the
+preferences modal are derived from `COOKIE_CATEGORIES` automatically. The
+banner intro / button labels live in `translations.ts` if you want to
+tweak those.
+
+After deploy: existing logged-in users see the banner reappear (because
+of the revision bump), make a choice, and the new category boolean is
+written to `accounts.other_settings.cookie_consent.marketing` — visible
+in the settings panel without further changes.
+
+### Persistence to account preferences
+
+The browser cookie (`cc_cookie`) is the authoritative source for the live
+session. Once the user is signed in, the SPA mirrors the choice into
+`accounts.other_settings.cookie_consent`:
+
+```json
+{
+  "necessary": true,
+  "analytics": false,
+  "timestamp": "2026-05-06T14:15:13.031Z",
+  "revision": 1
+}
+```
+
+Wired in `packages/frontend/app/render.tsx` via `onConsentChange` while
+`is_logged_in` is true. The server record is for audit + UI display — we do
+not restore it back into the browser (consent is browser-bound under GDPR).
+Booleans rather than a `categories: string[]` array because immutable.js
+mangles arrays into `{0: "x"}` when round-tripping through JSONB.
+
+The "Cookie preferences" panel in **Account → Preferences → Communication**
+(`packages/frontend/account/cookie-consent-settings.tsx`) shows the current
+choice, last-updated timestamp, and a button that re-opens the preferences
+modal so users can change their mind.
+
+### Revisioning
+
+`COOKIE_CONSENT_REVISION` (in `packages/frontend/cookie-consent/index.ts`)
+is the consent version number. Bump it whenever the categories or the
+banner text materially change — vanilla-cookieconsent will then re-prompt
+anyone with a stale `cc_cookie`. The revision is stored alongside each
+snapshot in `accounts.other_settings.cookie_consent.revision`, so old
+records are easy to identify.
+
+### Key Files
+
+| File                                                            | Purpose                                                |
+| --------------------------------------------------------------- | ------------------------------------------------------ |
+| `packages/frontend/cookie-consent/categories.ts`                | Single source of truth for cookie categories           |
+| `packages/frontend/cookie-consent/init.ts`                      | `initCookieConsent` — derives v3 config from categories|
+| `packages/frontend/cookie-consent/index.ts`                     | Public helpers + `useEssentialConsent` hook + revision |
+| `packages/frontend/cookie-consent/state.ts`                     | Internal "is banner active" flag                       |
+| `packages/frontend/cookie-consent/translations.ts`              | English strings (i18n integration is follow-up)        |
+| `packages/frontend/account/cookie-consent-settings.tsx`         | SPA settings panel for managing preferences            |
+| `packages/frontend/app/render.tsx`                              | Init + persist-to-account effect                 |
+| `packages/next/pages/_app.tsx`                                  | Init + force-consent detection on auth routes    |
+| `packages/util/db-schema/site-defaults.ts`                      | Admin settings (`cookie_banner_enabled`/`_text`) |
+
 ## Key Source Files
 
 | File                                                | Description                                       |

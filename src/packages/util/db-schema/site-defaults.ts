@@ -46,6 +46,7 @@ export const TAGS = [
   "I18N",
   "Security",
   "Support",
+  "Cookie Banner",
 ] as const;
 
 export type Tag = (typeof TAGS)[number];
@@ -129,7 +130,9 @@ export type SiteSettingsKeys =
   | "cloud_filesystems_enabled"
   | "insecure_test_mode"
   | "samesite_remember_me"
-  | "user_tracking";
+  | "user_tracking"
+  | "cookie_banner_enabled"
+  | "cookie_banner_text";
 
 //| "compute_servers_lambda-cloud_enabled"
 
@@ -538,6 +541,23 @@ export const site_settings_conf: SiteSettings = {
     clearable: true,
     show: (conf) => show_theming_vars(conf) && only_cocalc_com(conf),
     tags: ["Theme"],
+  },
+  cookie_banner_enabled: {
+    name: "Cookie banner",
+    desc: "Show a GDPR-style cookie consent banner to all visitors, regardless of geolocation. The banner offers two categories of cookies: *necessary* (required to sign in and keep a session) and *analytics* (optional tracking). Until the user accepts the *necessary* category, sign-up and sign-in are blocked.",
+    default: "no",
+    valid: only_booleans,
+    to_val: to_bool,
+    tags: ["Cookie Banner"],
+  },
+  cookie_banner_text: {
+    name: "Cookie banner text",
+    desc: "Markdown body shown in the cookie banner and preferences modal. Links to the privacy policy and terms of service are rendered as separate footer links and do not need to be repeated here.",
+    default:
+      "We use cookies that are strictly necessary for sign-in and session management, and optional analytics cookies to understand how the site is used. You can change your preferences at any time.",
+    clearable: true,
+    multiline: 5,
+    tags: ["Cookie Banner"],
   },
   // ============== END THEMING ============
 
