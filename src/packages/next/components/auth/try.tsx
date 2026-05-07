@@ -14,6 +14,10 @@ import {
   useGoogleReCaptcha,
 } from "react-google-recaptcha-v3";
 
+import {
+  requireEssentialConsent,
+  useEssentialConsent,
+} from "@cocalc/frontend/cookie-consent";
 import { len } from "@cocalc/util/misc";
 import A from "components/misc/A";
 import Loading from "components/share/loading";
@@ -49,6 +53,7 @@ function Try0({ minimal, onSuccess, publicPathId }: Props) {
     anonymousSignupLicensedShares,
   } = useCustomize();
   const [state, setState] = useState<"wait" | "creating" | "done">("wait");
+  const consentReady = useEssentialConsent();
   const [error, setError] = useState<string>("");
   const { executeRecaptcha } = useGoogleReCaptcha();
 
@@ -61,6 +66,7 @@ function Try0({ minimal, onSuccess, publicPathId }: Props) {
   }
 
   async function createAnonymousAccount() {
+    if (!requireEssentialConsent()) return;
     setState("creating");
     try {
       let reCaptchaToken: undefined | string;
@@ -116,7 +122,7 @@ function Try0({ minimal, onSuccess, publicPathId }: Props) {
         </A>
         !
         <Button
-          disabled={state != "wait"}
+          disabled={state != "wait" || !consentReady}
           shape="round"
           size="large"
           type="primary"
@@ -125,6 +131,8 @@ function Try0({ minimal, onSuccess, publicPathId }: Props) {
         >
           {state == "creating" ? (
             <Loading>Configuring Anonymous Access...</Loading>
+          ) : !consentReady ? (
+            "Acknowledge cookie banner to continue"
           ) : (
             <>Use {siteName} Anonymously</>
           )}

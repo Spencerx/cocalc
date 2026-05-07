@@ -682,6 +682,9 @@ importers:
       utility-types:
         specifier: ^3.10.0
         version: 3.11.0
+      vanilla-cookieconsent:
+        specifier: ^3.1.0
+        version: 3.1.0
       video-extensions:
         specifier: ^1.2.0
         version: 1.2.0
@@ -1069,6 +1072,9 @@ importers:
       uuid:
         specifier: ^8.3.2
         version: 8.3.2
+      vanilla-cookieconsent:
+        specifier: ^3.1.0
+        version: 3.1.0
       xmlbuilder2:
         specifier: ^4.0.1
         version: 4.0.3
@@ -11900,6 +11906,9 @@ packages:
   validator@13.15.22:
     resolution: {integrity: sha512-uT/YQjiyLJP7HSrv/dPZqK9L28xf8hsNca01HSz1dfmI0DgMfjopp1rO/z13NeGF1tVystF0Ejx3y4rUKPw+bQ==}
     engines: {node: '>= 0.10'}
+
+  vanilla-cookieconsent@3.1.0:
+    resolution: {integrity: sha512-/McNRtm/3IXzb9dhqMIcbquoU45SzbN2VB+To4jxEPqMmp7uVniP6BhGLjU8MC7ZCDsNQVOp27fhQTM/ruIXAA==}
 
   vary@1.1.2:
     resolution: {integrity: sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg==}
@@ -24475,6 +24484,8 @@ snapshots:
   validate.io-number@1.0.3: {}
 
   validator@13.15.22: {}
+
+  vanilla-cookieconsent@3.1.0: {}
 
   vary@1.1.2: {}
 

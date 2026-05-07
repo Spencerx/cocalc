@@ -11,10 +11,15 @@ import "antd/dist/reset.css";
 import "@ant-design/v5-patch-for-react-19";
 
 import { ConfigProvider } from "antd";
+import { useRouter } from "next/router";
+import { useEffect } from "react";
 import { Locale } from "locales/misc";
 
 // Initialize the appBasePath for the frontend codebase.
 import "@cocalc/frontend/customize/app-base-path";
+import "vanilla-cookieconsent/dist/cookieconsent.css";
+import { enableForceConsent } from "@cocalc/frontend/cookie-consent";
+import { initCookieConsent } from "@cocalc/frontend/cookie-consent/init";
 
 // CoCalc 3rd party libraries
 import "@cocalc/cdn/dist/codemirror/lib/codemirror.css";
@@ -38,6 +43,37 @@ function MyApp({
 }: // router,
 AppProps & { locale: Locale }) {
   const antdTheme = getBaseAntdTheme();
+  const router = useRouter();
+  const customize = pageProps?.customize;
+  // customize is undefined on pages that don't go through withCustomize
+  // (notably 404 / _error). Don't make a "banner disabled" decision in
+  // that case — that would let Analytics render legacy SSR scripts and
+  // bypass the consent contract.
+  const customizeAvailable = customize != null;
+  const cookieBannerEnabled = customize?.cookieBannerEnabled;
+  const cookieBannerText = customize?.cookieBannerText;
+  useEffect(() => {
+    if (!customizeAvailable) return;
+    initCookieConsent({
+      enabled: !!cookieBannerEnabled,
+      textMarkdown: cookieBannerText,
+    });
+  }, [customizeAvailable, cookieBannerEnabled, cookieBannerText]);
+
+  // Force-consent mode on auth + SSO launch pages: a dark overlay blocks
+  // interaction with the form until the user accepts the banner. We toggle
+  // this on every route change rather than baking it into the banner config
+  // at init — `disablePageInteraction` is a one-shot config option, so a
+  // user who lands on `/` first and then navigates to `/auth/sign-in`
+  // wouldn't see the dim otherwise. enableForceConsent is also a no-op when
+  // the user has already consented.
+  const path = router.pathname ?? "";
+  const isAuthRoute =
+    /^\/auth\/(sign-in|sign-up|try)/.test(path) || /^\/sso(\/|$)/.test(path);
+  useEffect(() => {
+    if (!cookieBannerEnabled || !isAuthRoute) return;
+    return enableForceConsent();
+  }, [cookieBannerEnabled, isAuthRoute]);
   return (
     <AppContext.Provider value={{ ...DEFAULT_CONTEXT }}>
       <ConfigProvider theme={antdTheme}>

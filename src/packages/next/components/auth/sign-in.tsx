@@ -11,6 +11,10 @@ import {
 } from "react-google-recaptcha-v3";
 
 import { Icon } from "@cocalc/frontend/components/icon";
+import {
+  requireEssentialConsent,
+  useEssentialConsent,
+} from "@cocalc/frontend/cookie-consent";
 import Contact from "components/landing/contact";
 import A from "components/misc/A";
 import apiPost from "lib/api/post";
@@ -51,6 +55,7 @@ function SignIn0(props: SignInProps) {
   const [error, setError] = useState<string>("");
   const [haveSSO, setHaveSSO] = useState<boolean>(false);
   const { executeRecaptcha } = useGoogleReCaptcha();
+  const consentReady = useEssentialConsent();
 
   useEffect(() => {
     setHaveSSO(strategies != null && strategies.length > 0);
@@ -61,6 +66,7 @@ function SignIn0(props: SignInProps) {
 
   async function signIn() {
     if (signingIn) return;
+    if (!requireEssentialConsent()) return;
     setError("");
     try {
       setSigningIn(true);
@@ -148,6 +154,12 @@ function SignIn0(props: SignInProps) {
       <form>
         {haveSSO && (
           <div
+            onClickCapture={(e) => {
+              if (!requireEssentialConsent()) {
+                e.preventDefault();
+                e.stopPropagation();
+              }
+            }}
             style={{
               textAlign: "center",
               margin: "20px 0",
@@ -197,6 +209,7 @@ function SignIn0(props: SignInProps) {
               shape="round"
               size="large"
               type="primary"
+              disabled={!consentReady}
               style={{ width: "100%", marginTop: "20px" }}
               onClick={signIn}
             >
@@ -204,6 +217,8 @@ function SignIn0(props: SignInProps) {
                 <>
                   <Icon name="spinner" spin /> Signing In...
                 </>
+              ) : !consentReady ? (
+                "Acknowledge cookie banner to continue"
               ) : (
                 "Sign In"
               )}
